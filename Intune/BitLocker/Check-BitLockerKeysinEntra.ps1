@@ -25,7 +25,7 @@
 
     Disclaimer: This script is provided AS IS without warranty of any kind.
 #>
- 
+  
 # Function to get BitLocker key for a device
 function Get-BitLockerKey {
     param (
