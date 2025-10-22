@@ -33,7 +33,7 @@
                                            -WorkspaceName "corp-workspace" `
                                            -FileName 'SentinelIncidents' `
                                            -Path 'C:\SecurityReports'
-
+ 
         This example fetches all incidents from the specified Azure Sentinel workspace and saves the report as a CSV file in the designated path.
 #>
 

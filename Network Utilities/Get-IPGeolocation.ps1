@@ -47,7 +47,7 @@ function Get-IPGeolocation {
         Organization= $GeoData.Org
         AS          = $GeoData.As
         IPAddress   = $GeoData.Query
-    }
+    } 
 }
 
 # Example usage
