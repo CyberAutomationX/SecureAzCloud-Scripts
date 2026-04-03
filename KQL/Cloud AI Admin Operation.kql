@@ -1,0 +1,21 @@
+// Name: Cloud AI Admin Operation
+// Purpose: Find administrative operations performed against AI cloud applications.
+// Data Source(s): CloudAppEvents
+// Tuning: Prioritize changes to connectors, policy, sharing, or application settings.
+
+
+let Lookback = 14d;
+let AIApps = dynamic(["chatgpt", "openai", "claude", "anthropic", "gemini", "copilot", "copilot studio", "azure ai", "azure openai", "perplexity", "mistral", "hugging face"]);
+CloudAppEvents
+| where Timestamp > ago(Lookback)
+| extend App = tolower(Application),
+         User = coalesce(AccountId, AccountDisplayName)
+| where App has_any (AIApps)
+| where tostring(IsAdminOperation) =~ "true"
+| summarize EventCount = count(),
+            Actions = make_set(ActionType, 25),
+            Activities = make_set(ActivityType, 25),
+            Objects = make_set(ObjectName, 25),
+            IPs = make_set(IPAddress, 20)
+    by User, Application, DeviceType, OSPlatform
+| sort by EventCount desc

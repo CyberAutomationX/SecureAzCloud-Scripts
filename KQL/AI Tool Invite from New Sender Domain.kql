@@ -1,0 +1,31 @@
+// Name: AI Tool Invite from New Sender Domain
+// Purpose: Detect AI invitation or collaboration emails from sender domains not seen previously for the recipient.
+// Data Source(s): EmailEvents
+// Tuning: Excellent for targeted collaboration-invite phishing around AI tools and workspaces.
+
+
+let RecentWindow = 1d;
+let BaselineWindow = 30d;
+let InviteTerms = dynamic(["invite", "invitation", "workspace", "shared with you", "join", "access granted", "project"]);
+let AIBrands = dynamic(["openai", "chatgpt", "gpt", "claude", "anthropic", "gemini", "copilot", "microsoft 365 copilot", "azure ai", "azure openai", "perplexity", "mistral", "hugging face"]);
+let Recent =
+    EmailEvents
+    | where Timestamp > ago(RecentWindow)
+    | extend Subject_l = tolower(Subject),
+             SenderDomain_l = tolower(SenderFromDomain)
+    | where Subject_l has_any (AIBrands) and Subject_l has_any (InviteTerms)
+    | summarize RecentCount = count(),
+                Subjects = make_set(Subject, 20),
+                Senders = make_set(SenderFromAddress, 20)
+        by RecipientEmailAddress, SenderDomain_l;
+let Baseline =
+    EmailEvents
+    | where Timestamp between (ago(BaselineWindow) .. ago(RecentWindow))
+    | extend Subject_l = tolower(Subject),
+             SenderDomain_l = tolower(SenderFromDomain)
+    | where Subject_l has_any (AIBrands) and Subject_l has_any (InviteTerms)
+    | summarize BaselineCount = count() by RecipientEmailAddress, SenderDomain_l;
+Recent
+| join kind=leftouter Baseline on RecipientEmailAddress, SenderDomain_l
+| where coalesce(BaselineCount, 0) == 0
+| sort by RecentCount desc

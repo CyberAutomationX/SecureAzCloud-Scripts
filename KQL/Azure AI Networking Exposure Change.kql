@@ -1,0 +1,17 @@
+// Name: Azure AI Networking Exposure Change
+// Purpose: Detect Azure Activity writes on Cognitive Services resources where networking or public exposure properties changed.
+// Data Source(s): AzureActivity
+// Tuning: Very strong governance control for Azure OpenAI and Azure AI services exposed to the internet.
+
+
+let Lookback = 30d;
+AzureActivity
+| where TimeGenerated > ago(Lookback)
+| extend Operation_l = tolower(OperationNameValue),
+         Provider_l = tolower(ResourceProviderValue),
+         Props_l = tolower(tostring(Properties_d))
+| where Provider_l has "microsoft.cognitiveservices"
+| where Operation_l has "accounts/write"
+| where Props_l has_any (dynamic(["publicnetworkaccess", "networkacls", "defaultaction", "bypass", "iprules", "virtualnetworkrules", "public network access"]))
+| project TimeGenerated, Caller, CallerIpAddress, OperationNameValue, ActivityStatusValue, SubscriptionId, ResourceGroup, ResourceId, Properties_d
+| sort by TimeGenerated desc

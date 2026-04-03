@@ -1,0 +1,32 @@
+// Name: Bulk AI Model Queries
+// Purpose: Detect recent AI query volume spikes by comparing the last day against the prior two-week baseline.
+// Data Source(s): DeviceNetworkEvents
+// Tuning: Tune RecentConnections and multiplier thresholds for engineering or research teams with legitimate heavy AI usage.
+
+
+let RecentWindow = 1d;
+let HistoricalWindow = 14d;
+let AIDomains = dynamic(["openai.com", "chatgpt.com", "api.openai.com", "anthropic.com", "api.anthropic.com", "claude.ai", "gemini.google.com", "generativelanguage.googleapis.com", "makersuite.google.com", "cohere.ai", "api.cohere.ai", "mistral.ai", "api.mistral.ai", "perplexity.ai", "api.perplexity.ai", "huggingface.co", "api-inference.huggingface.co", "replicate.com", "api.replicate.com", "together.ai", "together.xyz", "fireworks.ai", "stability.ai", "grok.com", "x.ai"]);
+let Recent =
+DeviceNetworkEvents
+| where Timestamp > ago(RecentWindow)
+| extend RemoteUrl_l = tolower(RemoteUrl),
+         Actor = iff(isempty(InitiatingProcessAccountUpn), strcat(InitiatingProcessAccountDomain, "\\", InitiatingProcessAccountName), InitiatingProcessAccountUpn)
+| where isnotempty(RemoteUrl_l) and RemoteUrl_l has_any (AIDomains)
+| summarize RecentConnections = count(), RecentDomains = dcount(RemoteUrl_l), RecentUrls = make_set(RemoteUrl, 20)
+    by DeviceName, DeviceId, Actor, InitiatingProcessFileName;
+let Historical =
+DeviceNetworkEvents
+| where Timestamp between (ago(HistoricalWindow) .. ago(RecentWindow))
+| extend RemoteUrl_l = tolower(RemoteUrl),
+         Actor = iff(isempty(InitiatingProcessAccountUpn), strcat(InitiatingProcessAccountDomain, "\\", InitiatingProcessAccountName), InitiatingProcessAccountUpn)
+| where isnotempty(RemoteUrl_l) and RemoteUrl_l has_any (AIDomains)
+| summarize HistoricalConnections = count(), HistoricalDays = dcount(bin(Timestamp, 1d))
+    by DeviceName, DeviceId, Actor, InitiatingProcessFileName;
+Recent
+| join kind=leftouter Historical on DeviceName, DeviceId, Actor, InitiatingProcessFileName
+| extend HistoricalConnections = coalesce(HistoricalConnections, 0),
+         HistoricalDays = coalesce(HistoricalDays, 0),
+         HistoricalDailyAverage = todouble(HistoricalConnections) / iif(HistoricalDays == 0, 1.0, todouble(HistoricalDays))
+| where RecentConnections >= 40 and RecentConnections >= HistoricalDailyAverage * 3
+| sort by RecentConnections desc

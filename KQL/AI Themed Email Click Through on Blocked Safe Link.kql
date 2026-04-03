@@ -1,0 +1,22 @@
+// Name: AI Themed Email Click Through on Blocked Safe Link
+// Purpose: Detect users who clicked through or proceeded on AI-themed URLs despite protection signals.
+// Data Source(s): UrlClickEvents
+// Tuning: Useful for prioritizing users who bypassed warning pages on AI-themed lures.
+
+
+let Lookback = 14d;
+let AIBrands = dynamic(["openai", "chatgpt", "gpt", "claude", "anthropic", "gemini", "copilot", "microsoft 365 copilot", "azure ai", "azure openai", "perplexity", "mistral", "hugging face"]);
+UrlClickEvents
+| where Timestamp > ago(Lookback)
+| extend Url_l = tolower(Url),
+         UrlChain_l = tolower(tostring(UrlChain)),
+         Threats_l = tolower(ThreatTypes)
+| where Url_l has_any (AIBrands) or UrlChain_l has_any (AIBrands)
+| where tobool(IsClickedThrough) == true or Threats_l has_any (dynamic(["phish", "malware", "suspicious"]))
+| summarize ClickCount = count(),
+            Urls = make_set(Url, 25),
+            Threats = make_set(ThreatTypes, 10),
+            Actions = make_set(ActionType, 10),
+            SourceIPs = make_set(IPAddress, 20)
+    by AccountUpn, Workload
+| sort by ClickCount desc

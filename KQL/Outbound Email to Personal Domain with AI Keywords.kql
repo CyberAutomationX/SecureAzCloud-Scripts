@@ -1,0 +1,21 @@
+// Name: Outbound Email to Personal Domain with AI Keywords
+// Purpose: Detect outbound mail to personal domains where the subject references AI brands, prompts, keys, or models.
+// Data Source(s): EmailEvents
+// Tuning: A practical insider-risk triage query for personal-email exfil tied to AI workflows.
+
+
+let Lookback = 14d;
+let PersonalDomains = dynamic(["gmail.com", "outlook.com", "hotmail.com", "live.com", "yahoo.com", "icloud.com", "aol.com", "proton.me", "protonmail.com"]);
+let SubjectTerms = dynamic(["ai", "openai", "chatgpt", "gpt", "claude", "anthropic", "gemini", "copilot", "prompt", "model", "api key", "token", "azure openai"]);
+EmailEvents
+| where Timestamp > ago(Lookback)
+| where EmailDirection =~ "Outbound"
+| extend RecipientDomain = tolower(split(RecipientEmailAddress, "@")[1]),
+         Subject_l = tolower(Subject)
+| where set_has_element(PersonalDomains, RecipientDomain)
+| where Subject_l has_any (SubjectTerms)
+| summarize MessageCount = count(),
+            Recipients = make_set(RecipientEmailAddress, 50),
+            Subjects = make_set(Subject, 25)
+    by SenderFromAddress, SenderFromDomain, RecipientDomain
+| sort by MessageCount desc

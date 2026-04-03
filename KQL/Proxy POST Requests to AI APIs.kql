@@ -1,0 +1,26 @@
+// Name: Proxy POST Requests to AI APIs
+// Purpose: Find HTTP POST activity to public AI services, which often maps to prompt submission, file upload, or API usage.
+// Data Source(s): CommonSecurityLog
+// Tuning: Raise thresholds for sanctioned developer networks and lower for executive or privileged subnets.
+
+
+let Lookback = 7d;
+let AIDomains = dynamic(["openai.com", "chatgpt.com", "api.openai.com", "anthropic.com", "api.anthropic.com", "claude.ai", "gemini.google.com", "generativelanguage.googleapis.com", "makersuite.google.com", "cohere.ai", "api.cohere.ai", "mistral.ai", "api.mistral.ai", "perplexity.ai", "api.perplexity.ai", "huggingface.co", "api-inference.huggingface.co", "replicate.com", "api.replicate.com", "together.ai", "together.xyz", "fireworks.ai", "stability.ai", "grok.com", "x.ai"]);
+CommonSecurityLog
+| where TimeGenerated > ago(Lookback)
+| extend RequestUrl_l = tolower(RequestURL),
+         ParsedHost = tolower(tostring(parse_url(RequestURL).Host)),
+         Host = coalesce(ParsedHost, tolower(DestinationHostName), RequestUrl_l),
+         User = coalesce(SourceUserName, SourceUserID),
+         Method = toupper(RequestMethod),
+         Action = coalesce(SimplifiedDeviceAction, DeviceAction)
+| where isnotempty(Host) and Host has_any (AIDomains)
+| where Method == "POST"
+| summarize PostCount = count(),
+            TotalSentBytes = sum(tolong(SentBytes)),
+            SampleUrls = make_set(RequestURL, 20),
+            UserAgents = make_set(RequestClientApplication, 15),
+            Actions = make_set(Action, 10)
+    by User, SourceIP, SourceHostName, DeviceVendor, DeviceProduct
+| where PostCount >= 3
+| sort by TotalSentBytes desc, PostCount desc

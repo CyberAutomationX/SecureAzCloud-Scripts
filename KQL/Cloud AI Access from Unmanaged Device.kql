@@ -1,0 +1,24 @@
+// Name: Cloud AI Access from Unmanaged Device
+// Purpose: Find AI cloud app activity coming from device types that are likely unmanaged or unknown.
+// Data Source(s): CloudAppEvents
+// Tuning: Tune with your MCAS/Defender for Cloud Apps device tagging and managed-device taxonomy.
+
+
+let Lookback = 14d;
+let AIApps = dynamic(["chatgpt", "openai", "claude", "anthropic", "gemini", "copilot", "copilot studio", "azure ai", "azure openai", "perplexity", "mistral", "hugging face"]);
+CloudAppEvents
+| where Timestamp > ago(Lookback)
+| extend App = tolower(Application),
+         User = coalesce(AccountId, AccountDisplayName),
+         DeviceType_l = tolower(DeviceType),
+         OS_l = tolower(OSPlatform)
+| where App has_any (AIApps)
+| where isempty(DeviceType_l) or DeviceType_l has_any (dynamic(["unknown", "unmanaged", "other"]))
+| summarize EventCount = count(),
+            Actions = make_set(ActionType, 25),
+            Activities = make_set(ActivityType, 25),
+            IPs = make_set(IPAddress, 20),
+            Countries = make_set(CountryCode, 20),
+            OSes = make_set(OSPlatform, 10)
+    by User, Application, DeviceType
+| sort by EventCount desc

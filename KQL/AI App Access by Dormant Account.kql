@@ -1,0 +1,25 @@
+// Name: AI App Access by Dormant Account
+// Purpose: Detect AI app sign-ins from accounts with no successful sign-in history in the prior month.
+// Data Source(s): SigninLogs
+// Tuning: Excellent for finding reactivated accounts or newly provisioned users touching AI assets.
+
+
+let RecentWindow = 1d;
+let BaselineWindow = 30d;
+let AIApps = dynamic(["openai", "chatgpt", "claude", "anthropic", "gemini", "copilot", "copilot studio", "azure ai", "azure openai", "cognitive services", "ai foundry", "perplexity", "mistral"]);
+let DormantUsers =
+    SigninLogs
+    | where TimeGenerated between (ago(BaselineWindow) .. ago(RecentWindow))
+    | where ResultType == 0
+    | summarize BaselineSignIns = count() by User = tostring(UserPrincipalName);
+SigninLogs
+| where TimeGenerated > ago(RecentWindow)
+| extend AppComposite = tolower(strcat(coalesce(AppDisplayName, ""), " ", coalesce(ResourceDisplayName, ""))),
+         User = tostring(UserPrincipalName),
+         Country = coalesce(tostring(LocationDetails.countryOrRegion), tostring(Location))
+| where AppComposite has_any (AIApps)
+| where ResultType == 0 and isnotempty(User)
+| join kind=leftouter DormantUsers on User
+| where coalesce(BaselineSignIns, 0) == 0
+| project TimeGenerated, User, AppDisplayName, ResourceDisplayName, IPAddress, Country, UserAgent, AuthenticationRequirement, ConditionalAccessStatus, ResultType, ResultDescription
+| sort by TimeGenerated desc

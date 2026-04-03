@@ -1,0 +1,34 @@
+// Name: Azure OpenAI Request Failures Spike
+// Purpose: Detect a short-term spike in Azure OpenAI request failures compared with the prior two-week baseline.
+// Data Source(s): AzureDiagnostics
+// Tuning: Useful for detecting key abuse, brute-force prompting, throttling, or broken automation.
+
+
+let RecentWindow = 1d;
+let BaselineWindow = 14d;
+let RuntimeData =
+    AzureDiagnostics
+    | where TimeGenerated > ago(BaselineWindow)
+    | extend Provider_l = tolower(ResourceProvider),
+             Category_l = tolower(Category),
+             CallerIP = coalesce(clientIpAddress_s, clientIP_s, client_ip_s, identity_claim_ipaddr_s, CallerIPAddress),
+             StatusCode = toint(coalesce(tostring(httpStatusCode_d), tostring(responseCode_d), tostring(statusCode_s))),
+             Resource = coalesce(_ResourceId, ResourceId)
+    | where Provider_l has "microsoft.cognitiveservices"
+    | where Category_l has_any (dynamic(["requestresponse", "azureopenairequestusage", "trace"]))
+    | project TimeGenerated, CallerIP, StatusCode, Resource;
+let Baseline =
+    RuntimeData
+    | where TimeGenerated between (ago(BaselineWindow) .. ago(RecentWindow))
+    | where StatusCode >= 400
+    | summarize BaselineAvgPerDay = todouble(count()) / 13.0 by CallerIP, Resource;
+let Recent =
+    RuntimeData
+    | where TimeGenerated > ago(RecentWindow)
+    | where StatusCode >= 400
+    | summarize RecentFailures = count(), StatusCodes = make_set(StatusCode, 20) by CallerIP, Resource;
+Recent
+| join kind=leftouter Baseline on CallerIP, Resource
+| extend BaselineAvgPerDay = coalesce(BaselineAvgPerDay, 0.0)
+| where RecentFailures >= 20 and RecentFailures > (BaselineAvgPerDay * 3.0 + 10.0)
+| sort by RecentFailures desc

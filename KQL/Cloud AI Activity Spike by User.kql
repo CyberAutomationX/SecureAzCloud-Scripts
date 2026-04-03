@@ -1,0 +1,26 @@
+// Name: Cloud AI Activity Spike by User
+// Purpose: Detect current-day AI cloud app activity that is materially higher than the prior two-week baseline.
+// Data Source(s): CloudAppEvents
+// Tuning: Great for high-volume abuse, prompt automation, or aggressive connector activity.
+
+
+let RecentWindow = 1d;
+let BaselineWindow = 14d;
+let AIApps = dynamic(["chatgpt", "openai", "claude", "anthropic", "gemini", "copilot", "copilot studio", "azure ai", "azure openai", "perplexity", "mistral", "hugging face"]);
+let Baseline =
+    CloudAppEvents
+    | where Timestamp between (ago(BaselineWindow) .. ago(RecentWindow))
+    | extend App = tolower(Application), User = coalesce(AccountId, AccountDisplayName)
+    | where App has_any (AIApps)
+    | summarize BaselineAvgPerDay = todouble(count()) / 13.0 by User, Application;
+let Recent =
+    CloudAppEvents
+    | where Timestamp > ago(RecentWindow)
+    | extend App = tolower(Application), User = coalesce(AccountId, AccountDisplayName)
+    | where App has_any (AIApps)
+    | summarize RecentCount = count(), Actions = make_set(ActionType, 25), IPs = make_set(IPAddress, 20) by User, Application;
+Recent
+| join kind=leftouter Baseline on User, Application
+| extend BaselineAvgPerDay = coalesce(BaselineAvgPerDay, 0.0)
+| where RecentCount >= 20 and RecentCount > (BaselineAvgPerDay * 3.0 + 10.0)
+| sort by RecentCount desc

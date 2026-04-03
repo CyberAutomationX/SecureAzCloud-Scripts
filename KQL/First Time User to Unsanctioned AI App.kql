@@ -1,0 +1,17 @@
+// Name: First Time User to Unsanctioned AI App
+// Purpose: Identify users whose first observed AI cloud app activity occurred in the last day.
+// Data Source(s): CloudAppEvents
+// Tuning: Useful when rolling out AI governance or targeting first-time user coaching.
+
+
+let RecentWindow = 1d;
+let SearchWindow = 30d;
+let AIApps = dynamic(["chatgpt", "openai", "claude", "anthropic", "gemini", "copilot", "copilot studio", "azure ai", "azure openai", "perplexity", "mistral", "hugging face"]);
+CloudAppEvents
+| where Timestamp > ago(SearchWindow)
+| extend App = tolower(Application),
+         User = coalesce(AccountId, AccountDisplayName)
+| where App has_any (AIApps)
+| summarize FirstSeen = min(Timestamp), LastSeen = max(Timestamp), EventCount = count(), Apps = make_set(Application, 20), IPs = make_set(IPAddress, 20) by User
+| where FirstSeen > ago(RecentWindow)
+| sort by FirstSeen desc

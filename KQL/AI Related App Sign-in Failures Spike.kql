@@ -1,0 +1,30 @@
+// Name: AI Related App Sign-in Failures Spike
+// Purpose: Detect a sharp spike in failed sign-ins against AI-related apps compared with the prior two-week baseline.
+// Data Source(s): SigninLogs
+// Tuning: Useful for spray, stuffing, and misconfigured automation targeting AI services.
+
+
+let RecentWindow = 1d;
+let BaselineWindow = 14d;
+let AIApps = dynamic(["openai", "chatgpt", "claude", "anthropic", "gemini", "copilot", "copilot studio", "azure ai", "azure openai", "cognitive services", "ai foundry", "perplexity", "mistral"]);
+let Baseline =
+    SigninLogs
+    | where TimeGenerated between (ago(BaselineWindow) .. ago(RecentWindow))
+    | extend AppComposite = tolower(strcat(coalesce(AppDisplayName, ""), " ", coalesce(ResourceDisplayName, ""))),
+             User = tostring(UserPrincipalName)
+    | where AppComposite has_any (AIApps)
+    | where ResultType != 0
+    | summarize BaselineAvgPerDay = todouble(count()) / 13.0 by User, AppDisplayName;
+let Recent =
+    SigninLogs
+    | where TimeGenerated > ago(RecentWindow)
+    | extend AppComposite = tolower(strcat(coalesce(AppDisplayName, ""), " ", coalesce(ResourceDisplayName, ""))),
+             User = tostring(UserPrincipalName)
+    | where AppComposite has_any (AIApps)
+    | where ResultType != 0
+    | summarize RecentFailCount = count(), IPs = make_set(IPAddress, 20), ResultDescriptions = make_set(ResultDescription, 20), UserAgents = make_set(UserAgent, 20) by User, AppDisplayName;
+Recent
+| join kind=leftouter Baseline on User, AppDisplayName
+| extend BaselineAvgPerDay = coalesce(BaselineAvgPerDay, 0.0)
+| where RecentFailCount >= 10 and RecentFailCount > (BaselineAvgPerDay * 3.0 + 5.0)
+| sort by RecentFailCount desc

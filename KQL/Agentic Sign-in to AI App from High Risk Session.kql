@@ -1,0 +1,20 @@
+// Name: Agentic Sign-in to AI App from High Risk Session
+// Purpose: Find AI app sign-ins where the request is agentic and the risk posture is elevated.
+// Data Source(s): SigninLogs
+// Tuning: Prioritize successful sign-ins and privileged identities for triage.
+
+
+let Lookback = 7d;
+let AIApps = dynamic(["openai", "chatgpt", "claude", "anthropic", "gemini", "copilot", "copilot studio", "azure ai", "azure openai", "cognitive services", "ai foundry", "perplexity", "mistral"]);
+SigninLogs
+| where TimeGenerated > ago(Lookback)
+| extend AppComposite = tolower(strcat(coalesce(AppDisplayName, ""), " ", coalesce(ResourceDisplayName, ""))),
+         User = tostring(UserPrincipalName),
+         AgentType = tolower(tostring(Agent.agentType)),
+         RiskAgg = tolower(tostring(RiskLevelAggregated)),
+         RiskDuring = tolower(tostring(RiskLevelDuringSignIn))
+| where AppComposite has_any (AIApps)
+| where isnotempty(AgentType)
+| where RiskAgg !in ("none", "low", "") or RiskDuring !in ("none", "low", "") or isnotempty(RiskEventTypes_V2)
+| project TimeGenerated, User, AppDisplayName, ResourceDisplayName, IPAddress, UserAgent, Agent, AuthenticationRequirement, ConditionalAccessStatus, RiskLevelAggregated, RiskLevelDuringSignIn, RiskEventTypes_V2, ResultType
+| sort by TimeGenerated desc

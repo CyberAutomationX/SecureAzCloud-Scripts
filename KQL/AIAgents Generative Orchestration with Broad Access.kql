@@ -1,0 +1,16 @@
+// Name: AIAgents Generative Orchestration with Broad Access
+// Purpose: Detect AI agents with generative orchestration enabled alongside broad access-control settings.
+// Data Source(s): AIAgentsInfo
+// Tuning: High-priority review item because orchestration plus broad access increases misuse and data-exposure risk.
+
+
+let Lookback = 30d;
+AIAgentsInfo
+| where Timestamp > ago(Lookback)
+| extend AccessPolicy_l = tolower(AccessControlPolicy),
+         AuthType_l = tolower(UserAuthenticationType),
+         GroupCount = array_length(todynamic(AuthorizedSecurityGroupIds))
+| where tostring(IsGenerativeOrchestrationEnabled) =~ "true"
+| where AccessPolicy_l has_any (dynamic(["any", "everyone", "all users", "public"])) or GroupCount == 0 or AuthType_l has_any (dynamic(["none", "anonymous", "notrequired", "noauth"]))
+| project Timestamp, AIAgentName, AIAgentId, Platform, EnvironmentId, CreatorAccountUpn, OwnerAccountUpns, AccessControlPolicy, AuthorizedSecurityGroupIds, UserAuthenticationType, AuthenticationTrigger, IsGenerativeOrchestrationEnabled, AgentStatus, LastPublishedTime, LastPublishedByUpn
+| sort by Timestamp desc

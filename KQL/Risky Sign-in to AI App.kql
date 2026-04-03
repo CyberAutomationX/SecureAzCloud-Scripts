@@ -1,0 +1,20 @@
+// Name: Risky Sign-in to AI App
+// Purpose: Detect sign-ins to AI-related apps where Azure AD/Entra risk signals are elevated.
+// Data Source(s): SigninLogs
+// Tuning: Prioritize medium/high risk and join with Identity Protection incidents for escalation.
+
+
+let Lookback = 7d;
+let AIApps = dynamic(["openai", "chatgpt", "claude", "anthropic", "gemini", "copilot", "copilot studio", "azure ai", "azure openai", "cognitive services", "ai foundry", "perplexity", "mistral"]);
+SigninLogs
+| where TimeGenerated > ago(Lookback)
+| extend AppComposite = tolower(strcat(coalesce(AppDisplayName, ""), " ", coalesce(ResourceDisplayName, ""))),
+         User = tostring(UserPrincipalName),
+         RiskAgg = tolower(tostring(RiskLevelAggregated)),
+         RiskDuring = tolower(tostring(RiskLevelDuringSignIn)),
+         RiskEvents = tostring(RiskEventTypes_V2),
+         Country = coalesce(tostring(LocationDetails.countryOrRegion), tostring(Location))
+| where AppComposite has_any (AIApps)
+| where RiskAgg !in ("none", "low", "") or RiskDuring !in ("none", "low", "") or isnotempty(RiskEvents)
+| project TimeGenerated, User, AppDisplayName, ResourceDisplayName, IPAddress, Country, UserAgent, AuthenticationRequirement, ConditionalAccessStatus, RiskLevelAggregated, RiskLevelDuringSignIn, RiskEventTypes_V2, ResultType, ResultDescription
+| sort by TimeGenerated desc

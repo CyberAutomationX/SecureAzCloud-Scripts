@@ -1,0 +1,34 @@
+// Name: Cloud AI App Access from Rare ISP
+// Purpose: Detect AI cloud app access from ISPs not seen for the same user in the prior two weeks.
+// Data Source(s): CloudAppEvents
+// Tuning: Particularly useful for user-centric anomaly detection when corporate egress is stable.
+
+
+let RecentWindow = 1d;
+let BaselineWindow = 14d;
+let AIApps = dynamic(["chatgpt", "openai", "claude", "anthropic", "gemini", "copilot", "copilot studio", "azure ai", "azure openai", "perplexity", "mistral", "hugging face"]);
+let Recent =
+    CloudAppEvents
+    | where Timestamp > ago(RecentWindow)
+    | extend App = tolower(Application),
+             User = coalesce(AccountId, AccountDisplayName),
+             ISP_l = tolower(Isp)
+    | where App has_any (AIApps)
+    | where isnotempty(User) and isnotempty(ISP_l)
+    | summarize RecentCount = count(),
+                RecentIPs = make_set(IPAddress, 20),
+                Countries = make_set(CountryCode, 20)
+        by User, Application, ISP_l;
+let Baseline =
+    CloudAppEvents
+    | where Timestamp between (ago(BaselineWindow) .. ago(RecentWindow))
+    | extend App = tolower(Application),
+             User = coalesce(AccountId, AccountDisplayName),
+             ISP_l = tolower(Isp)
+    | where App has_any (AIApps)
+    | where isnotempty(User) and isnotempty(ISP_l)
+    | summarize BaselineCount = count() by User, Application, ISP_l;
+Recent
+| join kind=leftouter Baseline on User, Application, ISP_l
+| where coalesce(BaselineCount, 0) == 0
+| sort by RecentCount desc

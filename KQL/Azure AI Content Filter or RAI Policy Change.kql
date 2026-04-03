@@ -1,0 +1,17 @@
+// Name: Azure AI Content Filter or RAI Policy Change
+// Purpose: Detect changes to responsible AI, content filtering, or safety-related policy objects on Azure AI resources.
+// Data Source(s): AzureActivity
+// Tuning: Prioritize weakening or disabling safety controls on externally reachable AI resources.
+
+
+let Lookback = 30d;
+AzureActivity
+| where TimeGenerated > ago(Lookback)
+| extend Operation_l = tolower(OperationNameValue),
+         Provider_l = tolower(ResourceProviderValue),
+         Props_l = tolower(tostring(Properties_d))
+| where Provider_l has "microsoft.cognitiveservices"
+| where Operation_l has_any (dynamic(["raipolicies/write", "contentfilters/write", "contentsafety", "safetysettings/write"]))
+    or Props_l has_any (dynamic(["rai", "responsible ai", "content filter", "contentfilter", "safety"]))
+| project TimeGenerated, Caller, CallerIpAddress, OperationNameValue, ActivityStatusValue, SubscriptionId, ResourceGroup, ResourceId, Properties_d
+| sort by TimeGenerated desc

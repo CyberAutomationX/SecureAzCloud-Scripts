@@ -1,0 +1,21 @@
+// Name: Service Principal Sign-in to AI Resource
+// Purpose: Detect service principal authentication to AI-related resources or applications.
+// Data Source(s): AADServicePrincipalSignInLogs
+// Tuning: Map these identities to application owners and expected workloads.
+
+
+let Lookback = 14d;
+let AIResourceTerms = dynamic(["openai", "cognitive services", "azure ai", "copilot", "copilot studio", "ai foundry", "foundry"]);
+AADServicePrincipalSignInLogs
+| where TimeGenerated > ago(Lookback)
+| extend ResourceComposite = tolower(strcat(coalesce(AppDisplayName, ""), " ", coalesce(ResourceDisplayName, ""))),
+         SPName = coalesce(ServicePrincipalName, AppDisplayName),
+         AgentType = tostring(Agent.agentType)
+| where ResourceComposite has_any (AIResourceTerms)
+| summarize SignInCount = count(),
+            IPs = make_set(IPAddress, 20),
+            UserAgents = make_set(UserAgent, 20),
+            CredentialTypes = make_set(ClientCredentialType, 10),
+            AgentTypes = make_set(AgentType, 10)
+    by SPName, ServicePrincipalId, ResourceDisplayName, AppId
+| sort by SignInCount desc

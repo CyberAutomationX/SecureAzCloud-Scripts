@@ -1,0 +1,15 @@
+// Name: Azure OpenAI Key in Command Line
+// Purpose: Detect Azure OpenAI or Cognitive Services key handling in command lines, including key listing, regeneration, and insecure token passing.
+// Data Source(s): DeviceProcessEvents
+// Tuning: Filter approved admin scripts only after validating they do not expose keys in shell history or logs.
+
+
+let Lookback = 7d;
+DeviceProcessEvents
+| where Timestamp > ago(Lookback)
+| extend Cmd_l = tolower(ProcessCommandLine),
+         Actor = iff(isempty(AccountUpn), strcat(AccountDomain, "\\", AccountName), AccountUpn)
+| where Cmd_l has_any ("azure_openai_api_key","api-key","api_key","--api-key","az cognitiveservices account keys list","az cognitiveservices account keys regenerate","openai.azure.com")
+| summarize ExecutionCount = count(), SampleCommands = make_set(ProcessCommandLine, 10)
+    by DeviceName, DeviceId, Actor, FileName, InitiatingProcessFileName, SHA1
+| sort by ExecutionCount desc

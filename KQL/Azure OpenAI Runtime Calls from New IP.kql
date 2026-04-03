@@ -1,0 +1,31 @@
+// Name: Azure OpenAI Runtime Calls from New IP
+// Purpose: Detect Azure OpenAI runtime caller IPs not seen for the same resource in the prior two weeks.
+// Data Source(s): AzureDiagnostics
+// Tuning: Great for detecting new calling infrastructure, unsanctioned API clients, or leaked keys used elsewhere.
+
+
+let RecentWindow = 1d;
+let BaselineWindow = 14d;
+let RuntimeData =
+    AzureDiagnostics
+    | where TimeGenerated > ago(BaselineWindow)
+    | extend Provider_l = tolower(ResourceProvider),
+             Category_l = tolower(Category),
+             CallerIP = coalesce(clientIpAddress_s, clientIP_s, client_ip_s, identity_claim_ipaddr_s, CallerIPAddress),
+             Resource = coalesce(_ResourceId, ResourceId)
+    | where Provider_l has "microsoft.cognitiveservices"
+    | where Category_l has_any (dynamic(["requestresponse", "azureopenairequestusage", "trace"]))
+    | where isnotempty(CallerIP)
+    | project TimeGenerated, CallerIP, Resource;
+let Recent =
+    RuntimeData
+    | where TimeGenerated > ago(RecentWindow)
+    | summarize RecentRequests = count() by CallerIP, Resource;
+let Baseline =
+    RuntimeData
+    | where TimeGenerated between (ago(BaselineWindow) .. ago(RecentWindow))
+    | summarize BaselineRequests = count() by CallerIP, Resource;
+Recent
+| join kind=leftouter Baseline on CallerIP, Resource
+| where coalesce(BaselineRequests, 0) == 0
+| sort by RecentRequests desc

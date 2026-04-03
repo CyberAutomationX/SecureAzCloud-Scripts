@@ -1,0 +1,31 @@
+// Name: User Sign-in to Copilot Studio from New Country
+// Purpose: Detect Copilot Studio sign-ins from countries not seen previously for the same user.
+// Data Source(s): SigninLogs
+// Tuning: Tune to include or exclude expected vendor and developer travel patterns.
+
+
+let RecentWindow = 1d;
+let BaselineWindow = 30d;
+let AppTerm = "copilot studio";
+let Recent =
+    SigninLogs
+    | where TimeGenerated > ago(RecentWindow)
+    | extend AppComposite = tolower(strcat(coalesce(AppDisplayName, ""), " ", coalesce(ResourceDisplayName, ""))),
+             User = tostring(UserPrincipalName),
+             Country = coalesce(tostring(LocationDetails.countryOrRegion), tostring(Location))
+    | where AppComposite has AppTerm
+    | where ResultType == 0 and isnotempty(User) and isnotempty(Country)
+    | summarize RecentCount = count(), RecentIPs = make_set(IPAddress, 20), UserAgents = make_set(UserAgent, 10) by User, Country;
+let Baseline =
+    SigninLogs
+    | where TimeGenerated between (ago(BaselineWindow) .. ago(RecentWindow))
+    | extend AppComposite = tolower(strcat(coalesce(AppDisplayName, ""), " ", coalesce(ResourceDisplayName, ""))),
+             User = tostring(UserPrincipalName),
+             Country = coalesce(tostring(LocationDetails.countryOrRegion), tostring(Location))
+    | where AppComposite has AppTerm
+    | where ResultType == 0 and isnotempty(User) and isnotempty(Country)
+    | summarize BaselineCount = count() by User, Country;
+Recent
+| join kind=leftouter Baseline on User, Country
+| where coalesce(BaselineCount, 0) == 0
+| sort by RecentCount desc

@@ -1,0 +1,16 @@
+// Name: AIAgents Recently Published by Non Owner
+// Purpose: Find recently published AI agents where the publisher is not listed as an owner.
+// Data Source(s): AIAgentsInfo
+// Tuning: Use this to spot out-of-band publication, delegated admin misuse, or ownership drift.
+
+
+let Lookback = 30d;
+AIAgentsInfo
+| where Timestamp > ago(Lookback)
+| where LastPublishedTime > ago(Lookback)
+| extend Owners = todynamic(OwnerAccountUpns),
+         Publisher = tostring(LastPublishedByUpn)
+| where isnotempty(Publisher)
+| where array_index_of(Owners, Publisher) == -1
+| project Timestamp, LastPublishedTime, AIAgentName, AIAgentId, Platform, EnvironmentId, CreatorAccountUpn, OwnerAccountUpns, LastPublishedByUpn, LastModifiedByUpn, AccessControlPolicy, UserAuthenticationType, AgentStatus
+| sort by LastPublishedTime desc

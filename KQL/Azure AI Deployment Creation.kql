@@ -1,0 +1,16 @@
+// Name: Azure AI Deployment Creation
+// Purpose: Detect creation or update of Azure AI / Azure OpenAI model deployments.
+// Data Source(s): AzureActivity
+// Tuning: Review deployments created outside change windows or by non-platform identities.
+
+
+let Lookback = 30d;
+AzureActivity
+| where TimeGenerated > ago(Lookback)
+| extend Operation_l = tolower(OperationNameValue),
+         Provider_l = tolower(ResourceProviderValue),
+         Props_l = tolower(tostring(Properties_d))
+| where Provider_l has "microsoft.cognitiveservices"
+| where Operation_l has "deployments/write" or ResourceId has "/deployments/"
+| project TimeGenerated, Caller, CallerIpAddress, OperationNameValue, ActivityStatusValue, SubscriptionId, ResourceGroup, ResourceId, Properties_d
+| sort by TimeGenerated desc

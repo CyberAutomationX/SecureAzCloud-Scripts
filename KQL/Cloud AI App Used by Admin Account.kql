@@ -1,0 +1,22 @@
+// Name: Cloud AI App Used by Admin Account
+// Purpose: Flag administrative or privileged identities using AI cloud applications.
+// Data Source(s): CloudAppEvents
+// Tuning: Replace string-based admin matching with a watchlist or identity enrichment if available.
+
+
+let Lookback = 7d;
+let AIApps = dynamic(["chatgpt", "openai", "claude", "anthropic", "gemini", "copilot", "copilot studio", "azure ai", "azure openai", "perplexity", "mistral", "hugging face"]);
+CloudAppEvents
+| where Timestamp > ago(Lookback)
+| extend App = tolower(Application),
+         User = coalesce(AccountId, AccountDisplayName),
+         AdminIndicator = tostring(IsAdminOperation)
+| where App has_any (AIApps)
+| where User has_any (dynamic(["admin", "administrator", "secops", "itops", "ga-", "pa-", "breakglass", "svc"])) or AdminIndicator =~ "true"
+| summarize EventCount = count(),
+            Actions = make_set(ActionType, 25),
+            Activities = make_set(ActivityType, 25),
+            IPs = make_set(IPAddress, 20),
+            Devices = make_set(DeviceType, 10)
+    by User, Application
+| sort by EventCount desc

@@ -1,0 +1,24 @@
+// Name: Impossible Travel for AI App Sign-ins
+// Purpose: Identify AI app sign-ins from different countries in an unrealistically short time window for the same user.
+// Data Source(s): SigninLogs
+// Tuning: Use after excluding known VPN or cloud-proxy exit points.
+
+
+let Lookback = 14d;
+let AIApps = dynamic(["openai", "chatgpt", "claude", "anthropic", "gemini", "copilot", "copilot studio", "azure ai", "azure openai", "cognitive services", "ai foundry", "perplexity", "mistral"]);
+SigninLogs
+| where TimeGenerated > ago(Lookback)
+| extend AppComposite = tolower(strcat(coalesce(AppDisplayName, ""), " ", coalesce(ResourceDisplayName, ""))),
+         User = tostring(UserPrincipalName),
+         Country = coalesce(tostring(LocationDetails.countryOrRegion), tostring(Location))
+| where AppComposite has_any (AIApps)
+| where ResultType == 0
+| where isnotempty(User) and isnotempty(Country)
+| sort by User asc, TimeGenerated asc
+| serialize PrevUser = prev(User), PrevTime = prev(TimeGenerated), PrevCountry = prev(Country), PrevIP = prev(IPAddress)
+| where User == PrevUser
+| where Country != PrevCountry
+| extend HoursBetween = datetime_diff("hour", TimeGenerated, PrevTime)
+| where HoursBetween between (0 .. 8)
+| project TimeGenerated, User, AppDisplayName, ResourceDisplayName, IPAddress, Country, PrevTime, PrevIP, PrevCountry, HoursBetween, UserAgent, AuthenticationRequirement, ConditionalAccessStatus
+| sort by TimeGenerated desc

@@ -1,0 +1,24 @@
+// Name: AI Themed Email with Attachment and URL
+// Purpose: Find AI-themed emails that include both attachments and URLs, a strong phishing combination.
+// Data Source(s): EmailEvents
+// Tuning: High-value triage query for hybrid lure delivery.
+
+
+let Lookback = 14d;
+let AIBrands = dynamic(["openai", "chatgpt", "gpt", "claude", "anthropic", "gemini", "copilot", "microsoft 365 copilot", "azure ai", "azure openai", "perplexity", "mistral", "hugging face"]);
+EmailEvents
+| where Timestamp > ago(Lookback)
+| extend Subject_l = tolower(Subject),
+         Display_l = tolower(SenderDisplayName),
+         Domain_l = tolower(SenderFromDomain),
+         Delivery_l = tolower(DeliveryAction),
+         Attachments = toint(AttachmentCount),
+         Urls = toint(UrlCount)
+| where Subject_l has_any (AIBrands) or Display_l has_any (AIBrands) or Domain_l has_any (AIBrands)
+| where Attachments > 0 and Urls > 0
+| where not(Delivery_l has_any (dynamic(["blocked", "dropped", "rejected"])))
+| summarize DeliveredCount = count(),
+            Recipients = make_set(RecipientEmailAddress, 50),
+            Subjects = make_set(Subject, 20)
+    by SenderFromAddress, SenderFromDomain, SenderDisplayName
+| sort by DeliveredCount desc

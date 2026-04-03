@@ -1,0 +1,15 @@
+// Name: AIAgents No Authentication
+// Purpose: Detect AI agents configured with no or weak user authentication requirements.
+// Data Source(s): AIAgentsInfo
+// Tuning: Strong governance rule for identifying agents that may be externally callable or insufficiently protected.
+
+
+let Lookback = 30d;
+AIAgentsInfo
+| where Timestamp > ago(Lookback)
+| extend AuthType_l = tolower(UserAuthenticationType),
+         AuthTrigger_l = tolower(AuthenticationTrigger)
+| where AuthType_l has_any (dynamic(["none", "anonymous", "notrequired", "noauth"]))
+    or AuthTrigger_l has_any (dynamic(["none", "anonymous", "notrequired", "noauth"]))
+| project Timestamp, AIAgentName, AIAgentId, Platform, EnvironmentId, CreatorAccountUpn, OwnerAccountUpns, UserAuthenticationType, AuthenticationTrigger, AccessControlPolicy, AgentStatus, LastPublishedTime, LastPublishedByUpn
+| sort by Timestamp desc

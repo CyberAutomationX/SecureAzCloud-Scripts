@@ -1,0 +1,25 @@
+// Name: AI Invoice or Offer Phish Delivered
+// Purpose: Find delivered AI-themed lures involving invoices, credits, renewals, free trials, or partner offers.
+// Data Source(s): EmailEvents
+// Tuning: Useful for identifying BEC-style AI lures and fraudulent billing notices.
+
+
+let Lookback = 14d;
+let AIBrands = dynamic(["openai", "chatgpt", "gpt", "claude", "anthropic", "gemini", "copilot", "microsoft 365 copilot", "azure ai", "azure openai", "perplexity", "mistral", "hugging face"]);
+let OfferTerms = dynamic(["invoice", "payment", "renewal", "subscription", "credit", "free trial", "promo", "offer", "partner", "grant", "license"]);
+EmailEvents
+| where Timestamp > ago(Lookback)
+| extend Subject_l = tolower(Subject),
+         Display_l = tolower(SenderDisplayName),
+         Domain_l = tolower(SenderFromDomain),
+         Delivery_l = tolower(DeliveryAction)
+| where Subject_l has_any (AIBrands) or Display_l has_any (AIBrands) or Domain_l has_any (AIBrands)
+| where Subject_l has_any (OfferTerms)
+| where not(Delivery_l has_any (dynamic(["blocked", "dropped", "rejected"])))
+| summarize DeliveredCount = count(),
+            Recipients = make_set(RecipientEmailAddress, 50),
+            Subjects = make_set(Subject, 25),
+            SenderIPs = make_set(SenderIPv4, 20)
+    by SenderFromAddress, SenderFromDomain, SenderDisplayName
+| where DeliveredCount >= 2
+| sort by DeliveredCount desc

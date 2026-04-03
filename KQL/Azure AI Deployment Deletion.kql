@@ -1,0 +1,15 @@
+// Name: Azure AI Deployment Deletion
+// Purpose: Detect deletion of Azure AI / Azure OpenAI model deployments.
+// Data Source(s): AzureActivity
+// Tuning: Deletion can indicate sabotage, cleanup after misuse, or aggressive model/endpoint changes.
+
+
+let Lookback = 30d;
+AzureActivity
+| where TimeGenerated > ago(Lookback)
+| extend Operation_l = tolower(OperationNameValue),
+         Provider_l = tolower(ResourceProviderValue)
+| where Provider_l has "microsoft.cognitiveservices"
+| where Operation_l has "deployments/delete" or (ResourceId has "/deployments/" and Operation_l has "/delete")
+| project TimeGenerated, Caller, CallerIpAddress, OperationNameValue, ActivityStatusValue, SubscriptionId, ResourceGroup, ResourceId, Properties_d
+| sort by TimeGenerated desc

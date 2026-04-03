@@ -1,0 +1,26 @@
+// Name: Post Delivery AI Phish ZAP
+// Purpose: Find AI-themed emails that were remediated post-delivery by Zero-hour Auto Purge or equivalent post-delivery action.
+// Data Source(s): EmailPostDeliveryEvents + EmailEvents
+// Tuning: Great for retrospective hunting of AI-themed phishing that initially landed in mailboxes.
+
+
+let Lookback = 14d;
+let AIBrands = dynamic(["openai", "chatgpt", "gpt", "claude", "anthropic", "gemini", "copilot", "microsoft 365 copilot", "azure ai", "azure openai", "perplexity", "mistral", "hugging face"]);
+let Themed =
+    EmailEvents
+    | where Timestamp > ago(Lookback)
+    | extend Subject_l = tolower(Subject), Display_l = tolower(SenderDisplayName), Domain_l = tolower(SenderFromDomain)
+    | where Subject_l has_any (AIBrands) or Display_l has_any (AIBrands) or Domain_l has_any (AIBrands)
+    | project NetworkMessageId, Subject, SenderFromAddress, SenderFromDomain, SenderDisplayName, RecipientEmailAddress, ThreatTypes;
+EmailPostDeliveryEvents
+| where Timestamp > ago(Lookback)
+| extend Action_l = tolower(ActionType), Trigger_l = tolower(ActionTrigger)
+| where Action_l has_any (dynamic(["zap", "move", "purge", "quarantine", "delete"])) or Trigger_l has_any (dynamic(["zap", "automated", "malware", "phish"]))
+| join kind=inner Themed on NetworkMessageId
+| summarize RemediatedCount = count(),
+            Recipients = make_set(RecipientEmailAddress, 100),
+            Subjects = make_set(Subject, 20),
+            PostDeliveryActions = make_set(ActionType, 10),
+            Triggers = make_set(ActionTrigger, 10)
+    by SenderFromAddress, SenderFromDomain, SenderDisplayName
+| sort by RemediatedCount desc

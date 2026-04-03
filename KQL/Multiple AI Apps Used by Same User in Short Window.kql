@@ -1,0 +1,22 @@
+// Name: Multiple AI Apps Used by Same User in Short Window
+// Purpose: Detect users touching several different AI cloud apps in a short period.
+// Data Source(s): CloudAppEvents
+// Tuning: Good for spotting broad AI experimentation, data shopping, or policy bypass attempts.
+
+
+let Lookback = 7d;
+let BurstWindow = 1h;
+let AIApps = dynamic(["chatgpt", "openai", "claude", "anthropic", "gemini", "copilot", "copilot studio", "azure ai", "azure openai", "perplexity", "mistral", "hugging face"]);
+CloudAppEvents
+| where Timestamp > ago(Lookback)
+| extend App = tostring(Application),
+         App_l = tolower(Application),
+         User = coalesce(AccountId, AccountDisplayName)
+| where App_l has_any (AIApps)
+| summarize DistinctApps = dcount(App),
+            Apps = make_set(App, 20),
+            Actions = make_set(ActionType, 20),
+            IPs = make_set(IPAddress, 20)
+    by User, bin(Timestamp, BurstWindow)
+| where DistinctApps >= 3
+| sort by DistinctApps desc

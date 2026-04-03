@@ -1,0 +1,21 @@
+// Name: AI Themed URL Click from Multiple Users
+// Purpose: Find AI-themed URLs clicked by multiple users, indicating campaign reuse.
+// Data Source(s): UrlClickEvents
+// Tuning: Prioritize URLs with multiple distinct users and confirmed click-through behavior.
+
+
+let Lookback = 14d;
+let AIBrands = dynamic(["openai", "chatgpt", "gpt", "claude", "anthropic", "gemini", "copilot", "microsoft 365 copilot", "azure ai", "azure openai", "perplexity", "mistral", "hugging face"]);
+UrlClickEvents
+| where Timestamp > ago(Lookback)
+| extend Url_l = tolower(Url),
+         UrlChain_l = tolower(tostring(UrlChain))
+| where Url_l has_any (AIBrands) or UrlChain_l has_any (AIBrands)
+| summarize UserCount = dcount(AccountUpn),
+            Users = make_set(AccountUpn, 50),
+            ClickCount = count(),
+            Actions = make_set(ActionType, 10),
+            Threats = make_set(ThreatTypes, 10)
+    by Url
+| where UserCount >= 3
+| sort by UserCount desc, ClickCount desc

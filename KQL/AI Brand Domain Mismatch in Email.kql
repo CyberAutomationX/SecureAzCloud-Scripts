@@ -1,0 +1,31 @@
+// Name: AI Brand Domain Mismatch in Email
+// Purpose: Detect likely AI brand impersonation where the visible brand does not match the sender domain.
+// Data Source(s): EmailEvents
+// Tuning: Strong for brand-impersonation hunting. Add approved partner or ticketing domains if necessary.
+
+
+let Lookback = 14d;
+EmailEvents
+| where Timestamp > ago(Lookback)
+| extend Subject_l = tolower(Subject),
+         Display_l = tolower(SenderDisplayName),
+         Domain_l = tolower(SenderFromDomain),
+         Brand = case(
+            Subject_l has "openai" or Display_l has "openai" or Subject_l has "chatgpt" or Display_l has "chatgpt", "openai",
+            Subject_l has "anthropic" or Display_l has "anthropic" or Subject_l has "claude" or Display_l has "claude", "anthropic",
+            Subject_l has "gemini" or Display_l has "gemini", "google",
+            Subject_l has "copilot" or Display_l has "copilot", "microsoft",
+            Subject_l has "perplexity" or Display_l has "perplexity", "perplexity",
+            ""
+         )
+| where isnotempty(Brand)
+| where (Brand == "openai" and not(Domain_l endswith "openai.com" or Domain_l endswith "chatgpt.com"))
+    or (Brand == "anthropic" and not(Domain_l endswith "anthropic.com" or Domain_l endswith "claude.ai"))
+    or (Brand == "google" and not(Domain_l endswith "google.com" or Domain_l endswith "gemini.google.com"))
+    or (Brand == "microsoft" and not(Domain_l endswith "microsoft.com" or Domain_l endswith "office.com" or Domain_l endswith "office365.com"))
+    or (Brand == "perplexity" and not(Domain_l endswith "perplexity.ai"))
+| summarize EventCount = count(),
+            Recipients = make_set(RecipientEmailAddress, 50),
+            Subjects = make_set(Subject, 20)
+    by Brand, SenderFromAddress, SenderFromDomain, SenderDisplayName
+| sort by EventCount desc

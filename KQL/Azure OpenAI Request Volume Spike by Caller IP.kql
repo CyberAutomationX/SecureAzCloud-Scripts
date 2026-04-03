@@ -1,0 +1,32 @@
+// Name: Azure OpenAI Request Volume Spike by Caller IP
+// Purpose: Detect caller IPs generating abnormally high Azure OpenAI runtime traffic relative to their baseline.
+// Data Source(s): AzureDiagnostics
+// Tuning: Useful for usage spikes, token abuse, and unsanctioned automation hammering the endpoint.
+
+
+let RecentWindow = 1d;
+let BaselineWindow = 14d;
+let RuntimeData =
+    AzureDiagnostics
+    | where TimeGenerated > ago(BaselineWindow)
+    | extend Provider_l = tolower(ResourceProvider),
+             Category_l = tolower(Category),
+             CallerIP = coalesce(clientIpAddress_s, clientIP_s, client_ip_s, identity_claim_ipaddr_s, CallerIPAddress),
+             Resource = coalesce(_ResourceId, ResourceId)
+    | where Provider_l has "microsoft.cognitiveservices"
+    | where Category_l has_any (dynamic(["requestresponse", "azureopenairequestusage", "trace"]))
+    | where isnotempty(CallerIP)
+    | project TimeGenerated, CallerIP, Resource;
+let Baseline =
+    RuntimeData
+    | where TimeGenerated between (ago(BaselineWindow) .. ago(RecentWindow))
+    | summarize BaselineAvgPerDay = todouble(count()) / 13.0 by CallerIP, Resource;
+let Recent =
+    RuntimeData
+    | where TimeGenerated > ago(RecentWindow)
+    | summarize RecentRequests = count() by CallerIP, Resource;
+Recent
+| join kind=leftouter Baseline on CallerIP, Resource
+| extend BaselineAvgPerDay = coalesce(BaselineAvgPerDay, 0.0)
+| where RecentRequests >= 100 and RecentRequests > (BaselineAvgPerDay * 3.0 + 50.0)
+| sort by RecentRequests desc

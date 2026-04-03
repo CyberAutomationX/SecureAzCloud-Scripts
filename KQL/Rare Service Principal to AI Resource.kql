@@ -1,0 +1,27 @@
+// Name: Rare Service Principal to AI Resource
+// Purpose: Detect service principals authenticating to AI resources for the first time in the last day.
+// Data Source(s): AADServicePrincipalSignInLogs
+// Tuning: High-value for catching newly enabled automation hitting AI resources.
+
+
+let RecentWindow = 1d;
+let BaselineWindow = 30d;
+let AIResourceTerms = dynamic(["openai", "cognitive services", "azure ai", "copilot", "copilot studio", "ai foundry", "foundry"]);
+let Recent =
+    AADServicePrincipalSignInLogs
+    | where TimeGenerated > ago(RecentWindow)
+    | extend ResourceComposite = tolower(strcat(coalesce(AppDisplayName, ""), " ", coalesce(ResourceDisplayName, ""))),
+             SPName = coalesce(ServicePrincipalName, AppDisplayName)
+    | where ResourceComposite has_any (AIResourceTerms)
+    | summarize RecentCount = count(), IPs = make_set(IPAddress, 20), Resources = make_set(ResourceDisplayName, 10), CredTypes = make_set(ClientCredentialType, 10) by SPName, ServicePrincipalId;
+let Baseline =
+    AADServicePrincipalSignInLogs
+    | where TimeGenerated between (ago(BaselineWindow) .. ago(RecentWindow))
+    | extend ResourceComposite = tolower(strcat(coalesce(AppDisplayName, ""), " ", coalesce(ResourceDisplayName, ""))),
+             SPName = coalesce(ServicePrincipalName, AppDisplayName)
+    | where ResourceComposite has_any (AIResourceTerms)
+    | summarize BaselineCount = count() by SPName, ServicePrincipalId;
+Recent
+| join kind=leftouter Baseline on SPName, ServicePrincipalId
+| where coalesce(BaselineCount, 0) == 0
+| sort by RecentCount desc

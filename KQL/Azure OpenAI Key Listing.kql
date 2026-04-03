@@ -1,0 +1,16 @@
+// Name: Azure OpenAI Key Listing
+// Purpose: Detect Azure Activity operations that list keys on Cognitive Services or Azure OpenAI resources.
+// Data Source(s): AzureActivity
+// Tuning: High-value for detecting discovery of usable API material on Azure AI resources.
+
+
+let Lookback = 30d;
+AzureActivity
+| where TimeGenerated > ago(Lookback)
+| extend Operation_l = tolower(OperationNameValue),
+         Provider_l = tolower(ResourceProviderValue),
+         Caller_l = tolower(Caller)
+| where Provider_l has "microsoft.cognitiveservices"
+| where Operation_l has "listkeys/action"
+| project TimeGenerated, Caller, CallerIpAddress, OperationNameValue, ActivityStatusValue, SubscriptionId, ResourceGroup, ResourceProviderValue, ResourceId, Properties_d
+| sort by TimeGenerated desc

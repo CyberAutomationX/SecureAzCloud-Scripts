@@ -1,0 +1,25 @@
+// Name: AI Tool Impersonation with Authentication Failure
+// Purpose: Detect AI-branded messages where sender authentication appears to fail or be missing.
+// Data Source(s): EmailEvents
+// Tuning: Review SPF/DKIM/DMARC parsing in AuthenticationDetails for your environment and adjust keywords accordingly.
+
+
+let Lookback = 14d;
+let AIBrands = dynamic(["openai", "chatgpt", "gpt", "claude", "anthropic", "gemini", "copilot", "microsoft 365 copilot", "azure ai", "azure openai", "perplexity", "mistral", "hugging face"]);
+EmailEvents
+| where Timestamp > ago(Lookback)
+| extend Subject_l = tolower(Subject),
+         Display_l = tolower(SenderDisplayName),
+         Domain_l = tolower(SenderFromDomain),
+         Auth_l = tolower(tostring(AuthenticationDetails)),
+         Delivery_l = tolower(DeliveryAction)
+| where Subject_l has_any (AIBrands) or Display_l has_any (AIBrands)
+| where not(Domain_l has_any (dynamic(["microsoft.com", "openai.com", "anthropic.com", "google.com"])))
+| where Auth_l has_any (dynamic(["fail", "softfail", "permerror", "none", "temperror", "unauthenticated", "spoof"]))
+| where not(Delivery_l has_any (dynamic(["blocked", "dropped", "rejected"])))
+| summarize DeliveredCount = count(),
+            Recipients = make_set(RecipientEmailAddress, 50),
+            Subjects = make_set(Subject, 20),
+            AuthSamples = make_set(AuthenticationDetails, 10)
+    by SenderFromAddress, SenderFromDomain, SenderDisplayName
+| sort by DeliveredCount desc

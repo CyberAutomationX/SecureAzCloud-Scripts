@@ -1,0 +1,15 @@
+// Name: Azure OpenAI Key Regeneration
+// Purpose: Detect Azure Activity operations that regenerate keys on Cognitive Services or Azure OpenAI resources.
+// Data Source(s): AzureActivity
+// Tuning: Treat unexpected key regeneration as potentially disruptive and security-relevant.
+
+
+let Lookback = 30d;
+AzureActivity
+| where TimeGenerated > ago(Lookback)
+| extend Operation_l = tolower(OperationNameValue),
+         Provider_l = tolower(ResourceProviderValue)
+| where Provider_l has "microsoft.cognitiveservices"
+| where Operation_l has "regeneratekey/action"
+| project TimeGenerated, Caller, CallerIpAddress, OperationNameValue, ActivityStatusValue, SubscriptionId, ResourceGroup, ResourceId, Properties_d
+| sort by TimeGenerated desc

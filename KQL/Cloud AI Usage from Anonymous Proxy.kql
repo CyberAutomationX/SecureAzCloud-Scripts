@@ -1,0 +1,21 @@
+// Name: Cloud AI Usage from Anonymous Proxy
+// Purpose: Find AI app activity where the source IP is tagged as anonymous proxy usage.
+// Data Source(s): CloudAppEvents
+// Tuning: High-signal for geo-evasion and account abuse. Review sanctioned VPN/proxy egress before alerting.
+
+
+let Lookback = 14d;
+let AIApps = dynamic(["chatgpt", "openai", "claude", "anthropic", "gemini", "copilot", "copilot studio", "azure ai", "azure openai", "perplexity", "mistral", "hugging face"]);
+CloudAppEvents
+| where Timestamp > ago(Lookback)
+| extend App = tolower(Application),
+         User = coalesce(AccountId, AccountDisplayName)
+| where App has_any (AIApps)
+| where tostring(IsAnonymousProxy) =~ "true"
+| summarize EventCount = count(),
+            Actions = make_set(ActionType, 25),
+            Activities = make_set(ActivityType, 25),
+            IPs = make_set(IPAddress, 20),
+            Countries = make_set(CountryCode, 20)
+    by User, Application, Isp, DeviceType
+| sort by EventCount desc

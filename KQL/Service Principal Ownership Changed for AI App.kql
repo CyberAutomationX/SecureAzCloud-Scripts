@@ -1,0 +1,19 @@
+// Name: Service Principal Ownership Changed for AI App
+// Purpose: Detect owner changes on AI-related service principals or applications.
+// Data Source(s): AuditLogs
+// Tuning: Owner changes on AI apps materially alter who can add credentials, consent permissions, and operate the app.
+
+
+let Lookback = 30d;
+let AIResourceTerms = dynamic(["openai", "cognitive services", "azure ai", "copilot", "copilot studio", "ai foundry", "foundry"]);
+AuditLogs
+| where TimeGenerated > ago(Lookback)
+| where ActivityDisplayName has_any (dynamic(["add owner to service principal", "remove owner from service principal", "add owner to application", "remove owner from application"]))
+| mv-expand TargetResources
+| extend TargetDisplayName = tolower(tostring(TargetResources.displayName)),
+         ActorUser = tostring(InitiatedBy.user.userPrincipalName),
+         ActorApp = tostring(InitiatedBy.app.displayName),
+         ActorIP = tostring(InitiatedBy.user.ipAddress)
+| where TargetDisplayName has_any (AIResourceTerms)
+| project TimeGenerated, ActivityDisplayName, TargetDisplayName, Actor = coalesce(ActorUser, ActorApp), ActorIP, Result, ResultReason, AdditionalDetails, TargetResources
+| sort by TimeGenerated desc

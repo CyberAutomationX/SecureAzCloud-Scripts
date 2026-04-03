@@ -1,0 +1,23 @@
+// Name: OAuth App Granted High Risk Permissions with AI Keywords
+// Purpose: Find AI-related app-consent events where high-risk OAuth scopes or app roles were added.
+// Data Source(s): AuditLogs
+// Tuning: Strong detection for AI-branded malicious OAuth apps seeking broad tenant data access.
+
+
+let Lookback = 30d;
+let AIApps = dynamic(["openai", "chatgpt", "claude", "anthropic", "gemini", "copilot", "copilot studio", "azure ai", "azure openai", "cognitive services", "ai foundry", "perplexity", "mistral"]);
+let HighRiskPerms = dynamic(["mail.read", "mail.readwrite", "mail.send", "files.readwrite.all", "sites.readwrite.all", "sites.fullcontrol.all", "directory.readwrite.all", "rolemanagement.readwrite.directory", "offline_access"]);
+AuditLogs
+| where TimeGenerated > ago(Lookback)
+| where ActivityDisplayName has_any (dynamic(["add delegated permission grant", "add app role assignment to service principal", "grant consent to application", "consent to application"]))
+| mv-expand TargetResources
+| extend TargetDisplayName = tolower(tostring(TargetResources.displayName)),
+         ActorUser = tostring(InitiatedBy.user.userPrincipalName),
+         ActorApp = tostring(InitiatedBy.app.displayName),
+         ActorIP = tostring(InitiatedBy.user.ipAddress),
+         Modified = tolower(tostring(TargetResources.modifiedProperties)),
+         Details = tolower(tostring(AdditionalDetails))
+| where TargetDisplayName has_any (AIApps) or Modified has_any (AIApps) or Details has_any (AIApps)
+| where Modified has_any (HighRiskPerms) or Details has_any (HighRiskPerms)
+| project TimeGenerated, ActivityDisplayName, TargetDisplayName, Actor = coalesce(ActorUser, ActorApp), ActorIP, Result, ResultReason, AdditionalDetails, TargetResources
+| sort by TimeGenerated desc

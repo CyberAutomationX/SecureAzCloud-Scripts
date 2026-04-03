@@ -1,0 +1,25 @@
+// Name: Cloud AI Bulk Download Activity
+// Purpose: Detect short-window bursts of file download or export activity from AI cloud applications.
+// Data Source(s): CloudAppEvents
+// Tuning: Works well for prompt-result exports, downloaded conversations, and AI-generated file retrieval.
+
+
+let Lookback = 7d;
+let BurstWindow = 30m;
+let AIApps = dynamic(["chatgpt", "openai", "claude", "anthropic", "gemini", "copilot", "copilot studio", "azure ai", "azure openai", "perplexity", "mistral", "hugging face"]);
+let DownloadTerms = dynamic(["download", "filedownloaded", "download file", "export", "get file"]);
+CloudAppEvents
+| where Timestamp > ago(Lookback)
+| extend App = tolower(Application),
+         User = coalesce(AccountId, AccountDisplayName),
+         Action = tolower(ActionType),
+         Activity = tolower(ActivityType)
+| where App has_any (AIApps)
+| where Action has_any (DownloadTerms) or Activity has_any (DownloadTerms)
+| summarize DownloadCount = count(),
+            Objects = make_set(ObjectName, 50),
+            ObjectTypes = make_set(ObjectType, 10),
+            IPs = make_set(IPAddress, 20)
+    by User, Application, bin(Timestamp, BurstWindow)
+| where DownloadCount >= 10
+| sort by DownloadCount desc

@@ -1,0 +1,29 @@
+// Name: Outbound Email Referencing AI API Keys
+// Purpose: Detect outbound email subjects or attached filenames suggestive of AI API keys, tokens, or secret-sharing.
+// Data Source(s): EmailEvents + EmailAttachmentInfo
+// Tuning: Email body content is not available in these tables, so this hunts subject lines and suspicious attachment names.
+
+
+let Lookback = 14d;
+let KeyTerms = dynamic(["api key", "apikey", "token", "secret", "azure openai", "openai key", "anthropic key", "claude key", ".env"]);
+let OutboundBase =
+    EmailEvents
+    | where Timestamp > ago(Lookback)
+    | where EmailDirection =~ "Outbound"
+    | extend Subject_l = tolower(Subject)
+    | where Subject_l has_any (KeyTerms)
+    | project NetworkMessageId, Timestamp, SenderFromAddress, RecipientEmailAddress, Subject, SenderFromDomain;
+let SuspiciousAttachments =
+    EmailAttachmentInfo
+    | where Timestamp > ago(Lookback)
+    | extend FileName_l = tolower(FileName)
+    | where FileName_l has_any (dynamic([".env", "secrets", "apikey", "api_key", "openai", "anthropic", "azureopenai"]))
+    | summarize AttachmentNames = make_set(FileName, 25) by NetworkMessageId;
+OutboundBase
+| join kind=leftouter SuspiciousAttachments on NetworkMessageId
+| summarize MessageCount = count(),
+            Recipients = make_set(RecipientEmailAddress, 50),
+            Subjects = make_set(Subject, 20),
+            AttachmentNames = make_set(AttachmentNames, 25)
+    by SenderFromAddress, SenderFromDomain
+| sort by MessageCount desc

@@ -1,0 +1,26 @@
+// Name: AI Developer Tool Attachment Delivery
+// Purpose: Detect AI-themed emails that deliver developer-oriented attachments such as scripts, archives, and code.
+// Data Source(s): EmailEvents + EmailAttachmentInfo
+// Tuning: High-value for detecting initial access and malicious tool delivery under AI-themed lures.
+
+
+let Lookback = 14d;
+let DevExtensions = dynamic([".ps1", ".psm1", ".bat", ".cmd", ".vbs", ".js", ".jse", ".py", ".zip", ".rar", ".7z", ".lnk", ".html", ".htm"]);
+let AIBrands = dynamic(["openai", "chatgpt", "gpt", "claude", "anthropic", "gemini", "copilot", "microsoft 365 copilot", "azure ai", "azure openai", "perplexity", "mistral", "hugging face"]);
+let ThemedMessages =
+    EmailEvents
+    | where Timestamp > ago(Lookback)
+    | extend Subject_l = tolower(Subject), Display_l = tolower(SenderDisplayName), Domain_l = tolower(SenderFromDomain)
+    | where Subject_l has_any (AIBrands) or Display_l has_any (AIBrands) or Domain_l has_any (AIBrands)
+    | project NetworkMessageId, Timestamp, SenderFromAddress, SenderFromDomain, SenderDisplayName, Subject, RecipientEmailAddress;
+EmailAttachmentInfo
+| where Timestamp > ago(Lookback)
+| extend FileName_l = tolower(FileName)
+| where FileName_l has_any (DevExtensions)
+| join kind=inner ThemedMessages on NetworkMessageId
+| summarize AttachmentMessageCount = dcount(NetworkMessageId),
+            Recipients = make_set(RecipientEmailAddress, 100),
+            Attachments = make_set(FileName, 50),
+            Subjects = make_set(Subject, 20)
+    by SenderFromAddress, SenderFromDomain, SenderDisplayName
+| sort by AttachmentMessageCount desc

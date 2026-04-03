@@ -1,0 +1,23 @@
+// Name: AI Themed Email from Bulk Sender
+// Purpose: Identify AI-themed emails that look like marketing or bulk-mail traffic but may be malicious or policy-relevant.
+// Data Source(s): EmailEvents
+// Tuning: Useful when AI-themed mass mail bypasses user trust because it looks promotional rather than overtly malicious.
+
+
+let Lookback = 14d;
+let AIBrands = dynamic(["openai", "chatgpt", "gpt", "claude", "anthropic", "gemini", "copilot", "microsoft 365 copilot", "azure ai", "azure openai", "perplexity", "mistral", "hugging face"]);
+EmailEvents
+| where Timestamp > ago(Lookback)
+| extend Subject_l = tolower(Subject),
+         Display_l = tolower(SenderDisplayName),
+         Domain_l = tolower(SenderFromDomain),
+         BCL = toint(BulkComplaintLevel),
+         Detections_l = tolower(DetectionMethods)
+| where Subject_l has_any (AIBrands) or Display_l has_any (AIBrands) or Domain_l has_any (AIBrands)
+| where BCL >= 5 or Detections_l has "bulk"
+| summarize MessageCount = count(),
+            RecipientCount = dcount(RecipientEmailAddress),
+            Recipients = make_set(RecipientEmailAddress, 100),
+            Subjects = make_set(Subject, 20)
+    by SenderFromAddress, SenderFromDomain, SenderDisplayName, BulkComplaintLevel
+| sort by RecipientCount desc, MessageCount desc

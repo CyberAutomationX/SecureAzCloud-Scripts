@@ -1,0 +1,23 @@
+// Name: Cloud AI File Upload Activity
+// Purpose: Detect file upload actions to AI cloud applications.
+// Data Source(s): CloudAppEvents
+// Tuning: Useful for sanctioned AI governance as well as unsanctioned upload monitoring.
+
+
+let Lookback = 7d;
+let AIApps = dynamic(["chatgpt", "openai", "claude", "anthropic", "gemini", "copilot", "copilot studio", "azure ai", "azure openai", "perplexity", "mistral", "hugging face"]);
+let UploadTerms = dynamic(["upload", "fileuploaded", "upload file", "create file", "put file"]);
+CloudAppEvents
+| where Timestamp > ago(Lookback)
+| extend App = tolower(Application),
+         User = coalesce(AccountId, AccountDisplayName),
+         Action = tolower(ActionType),
+         Activity = tolower(ActivityType)
+| where App has_any (AIApps)
+| where Action has_any (UploadTerms) or Activity has_any (UploadTerms)
+| summarize UploadCount = count(),
+            ObjectNames = make_set(ObjectName, 25),
+            ObjectTypes = make_set(ObjectType, 10),
+            IPs = make_set(IPAddress, 20)
+    by User, Application, DeviceType, OSPlatform
+| sort by UploadCount desc

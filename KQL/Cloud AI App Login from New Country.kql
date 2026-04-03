@@ -1,0 +1,35 @@
+// Name: Cloud AI App Login from New Country
+// Purpose: Detect Cloud App Security events for AI applications from countries not seen for the same user in the prior two weeks.
+// Data Source(s): CloudAppEvents
+// Tuning: Exclude travel-heavy users or sanctioned geo-distributed proxy exit points.
+
+
+let RecentWindow = 1d;
+let BaselineWindow = 14d;
+let AIApps = dynamic(["chatgpt", "openai", "claude", "anthropic", "gemini", "copilot", "copilot studio", "azure ai", "azure openai", "perplexity", "mistral", "hugging face"]);
+let Recent =
+    CloudAppEvents
+    | where Timestamp > ago(RecentWindow)
+    | extend App = tolower(Application),
+             User = coalesce(AccountId, AccountDisplayName),
+             Country = tostring(CountryCode)
+    | where App has_any (AIApps)
+    | where isnotempty(User) and isnotempty(Country)
+    | summarize RecentCount = count(),
+                RecentIPs = make_set(IPAddress, 20),
+                RecentCities = make_set(City, 20),
+                UserAgents = make_set(UserAgent, 20)
+        by User, Application, Country;
+let Baseline =
+    CloudAppEvents
+    | where Timestamp between (ago(BaselineWindow) .. ago(RecentWindow))
+    | extend App = tolower(Application),
+             User = coalesce(AccountId, AccountDisplayName),
+             Country = tostring(CountryCode)
+    | where App has_any (AIApps)
+    | where isnotempty(User) and isnotempty(Country)
+    | summarize BaselineCount = count() by User, Application, Country;
+Recent
+| join kind=leftouter Baseline on User, Application, Country
+| where coalesce(BaselineCount, 0) == 0
+| sort by RecentCount desc

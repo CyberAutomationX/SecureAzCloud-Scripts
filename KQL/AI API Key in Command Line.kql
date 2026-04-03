@@ -1,0 +1,17 @@
+// Name: AI API Key in Command Line
+// Purpose: Detect AI API key names or token-like strings exposed on the command line.
+// Data Source(s): DeviceProcessEvents
+// Tuning: Review automation hosts carefully; some build systems may pass tokens insecurely and require remediation rather than alert suppression.
+
+
+let Lookback = 7d;
+DeviceProcessEvents
+| where Timestamp > ago(Lookback)
+| extend Cmd = tostring(ProcessCommandLine),
+         Cmd_l = tolower(ProcessCommandLine),
+         Actor = iff(isempty(AccountUpn), strcat(AccountDomain, "\\", AccountName), AccountUpn)
+| where Cmd_l has_any ("openai_api_key","anthropic_api_key","gemini_api_key","google_api_key","mistral_api_key","cohere_api_key","xai_api_key")
+       or Cmd matches regex @"(?i)sk-[A-Za-z0-9]{20,}"
+| summarize ExecutionCount = count(), SampleCommands = make_set(Cmd, 10)
+    by DeviceName, DeviceId, Actor, FileName, SHA1, InitiatingProcessFileName
+| sort by ExecutionCount desc

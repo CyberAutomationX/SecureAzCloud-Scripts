@@ -1,0 +1,20 @@
+// Name: AI CLI Execution
+// Purpose: Detect execution of popular AI and agent CLI tooling such as aider, fabric, gptscript, cline, continue, and similar wrappers.
+// Data Source(s): DeviceProcessEvents
+// Tuning: Review the AITools seed list and remove any internally sanctioned tools to reduce noise.
+
+
+let Lookback = 7d;
+let AITools = dynamic(["aider", "gptscript", "fabric", "llm", "shell-gpt", "sgpt", "cline", "continue", "cursor", "windsurf", "goose", "ollama", "lmstudio", "koboldcpp", "text-generation-webui"]);
+DeviceProcessEvents
+| where Timestamp > ago(Lookback)
+| extend Proc = tolower(FileName),
+         Cmd = tolower(ProcessCommandLine),
+         Actor = iff(isempty(AccountUpn), strcat(AccountDomain, "\\", AccountName), AccountUpn)
+| where Proc has_any (AITools) or Cmd has_any (AITools)
+| summarize ExecutionCount = count(),
+            FirstSeen = min(Timestamp),
+            LastSeen = max(Timestamp),
+            SampleCommands = make_set(ProcessCommandLine, 10)
+    by DeviceName, DeviceId, Actor, FileName, SHA1, InitiatingProcessFileName
+| sort by ExecutionCount desc

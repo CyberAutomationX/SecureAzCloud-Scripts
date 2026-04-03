@@ -1,0 +1,20 @@
+// Name: AI App Role Assignment to Service Principal
+// Purpose: Detect app role assignments involving AI-related applications or resources.
+// Data Source(s): AuditLogs
+// Tuning: Review whether the assigned role is expected and whether the assignee is controlled by approved owners.
+
+
+let Lookback = 30d;
+let AIApps = dynamic(["openai", "chatgpt", "claude", "anthropic", "gemini", "copilot", "copilot studio", "azure ai", "azure openai", "cognitive services", "ai foundry", "perplexity", "mistral"]);
+AuditLogs
+| where TimeGenerated > ago(Lookback)
+| where ActivityDisplayName =~ "Add app role assignment to service principal"
+| mv-expand TargetResources
+| extend TargetDisplayName = tolower(tostring(TargetResources.displayName)),
+         ActorUser = tostring(InitiatedBy.user.userPrincipalName),
+         ActorApp = tostring(InitiatedBy.app.displayName),
+         ActorIP = tostring(InitiatedBy.user.ipAddress),
+         Modified = tostring(TargetResources.modifiedProperties)
+| where TargetDisplayName has_any (AIApps) or Modified has_any (AIApps)
+| project TimeGenerated, ActivityDisplayName, TargetDisplayName, Actor = coalesce(ActorUser, ActorApp), ActorIP, Result, ResultReason, AdditionalDetails, TargetResources
+| sort by TimeGenerated desc

@@ -1,0 +1,15 @@
+// Name: Azure AI Private Endpoint Removal
+// Purpose: Detect deletion or severing of private endpoint connections on Azure AI resources.
+// Data Source(s): AzureActivity
+// Tuning: Private endpoint removal can precede public exposure or break expected enclave access patterns.
+
+
+let Lookback = 30d;
+AzureActivity
+| where TimeGenerated > ago(Lookback)
+| extend Operation_l = tolower(OperationNameValue),
+         Provider_l = tolower(ResourceProviderValue)
+| where Provider_l has "microsoft.cognitiveservices"
+| where Operation_l has "privateendpointconnections/delete" or Operation_l has "privateendpointconnections/remove"
+| project TimeGenerated, Caller, CallerIpAddress, OperationNameValue, ActivityStatusValue, SubscriptionId, ResourceGroup, ResourceId, Properties_d
+| sort by TimeGenerated desc

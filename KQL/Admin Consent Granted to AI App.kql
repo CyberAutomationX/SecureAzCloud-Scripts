@@ -1,0 +1,20 @@
+// Name: Admin Consent Granted to AI App
+// Purpose: Detect admin consent or permission-grant events for AI-related applications.
+// Data Source(s): AuditLogs
+// Tuning: Prioritize permissions that grant mail, files, sites, directory, or offline access.
+
+
+let Lookback = 30d;
+let AIApps = dynamic(["openai", "chatgpt", "claude", "anthropic", "gemini", "copilot", "copilot studio", "azure ai", "azure openai", "cognitive services", "ai foundry", "perplexity", "mistral"]);
+AuditLogs
+| where TimeGenerated > ago(Lookback)
+| where ActivityDisplayName has_any (dynamic(["consent to application", "grant consent to application", "add delegated permission grant", "add app role assignment to service principal"]))
+| mv-expand TargetResources
+| extend TargetDisplayName = tolower(tostring(TargetResources.displayName)),
+         ActorUser = tostring(InitiatedBy.user.userPrincipalName),
+         ActorApp = tostring(InitiatedBy.app.displayName),
+         ActorIP = tostring(InitiatedBy.user.ipAddress),
+         Modified = tostring(TargetResources.modifiedProperties)
+| where TargetDisplayName has_any (AIApps) or Modified has_any (AIApps)
+| project TimeGenerated, ActivityDisplayName, TargetDisplayName, Actor = coalesce(ActorUser, ActorApp), ActorIP, Result, ResultReason, AdditionalDetails, TargetResources
+| sort by TimeGenerated desc

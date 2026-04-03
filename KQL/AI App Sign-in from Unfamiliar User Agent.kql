@@ -1,0 +1,31 @@
+// Name: AI App Sign-in from Unfamiliar User Agent
+// Purpose: Detect AI app sign-ins where the user's user agent is new relative to the prior two weeks.
+// Data Source(s): SigninLogs
+// Tuning: Useful for catching new automation frameworks, mobile apps, or scripted browser stacks.
+
+
+let RecentWindow = 1d;
+let BaselineWindow = 14d;
+let AIApps = dynamic(["openai", "chatgpt", "claude", "anthropic", "gemini", "copilot", "copilot studio", "azure ai", "azure openai", "cognitive services", "ai foundry", "perplexity", "mistral"]);
+let Recent =
+    SigninLogs
+    | where TimeGenerated > ago(RecentWindow)
+    | extend AppComposite = tolower(strcat(coalesce(AppDisplayName, ""), " ", coalesce(ResourceDisplayName, ""))),
+             User = tostring(UserPrincipalName),
+             UA = tostring(UserAgent)
+    | where AppComposite has_any (AIApps)
+    | where ResultType == 0 and isnotempty(User) and isnotempty(UA)
+    | summarize RecentCount = count(), RecentIPs = make_set(IPAddress, 20), Apps = make_set(AppDisplayName, 10) by User, UA;
+let Baseline =
+    SigninLogs
+    | where TimeGenerated between (ago(BaselineWindow) .. ago(RecentWindow))
+    | extend AppComposite = tolower(strcat(coalesce(AppDisplayName, ""), " ", coalesce(ResourceDisplayName, ""))),
+             User = tostring(UserPrincipalName),
+             UA = tostring(UserAgent)
+    | where AppComposite has_any (AIApps)
+    | where ResultType == 0 and isnotempty(User) and isnotempty(UA)
+    | summarize BaselineCount = count() by User, UA;
+Recent
+| join kind=leftouter Baseline on User, UA
+| where coalesce(BaselineCount, 0) == 0
+| sort by RecentCount desc

@@ -1,0 +1,19 @@
+// Name: AI App Sign-in Without MFA
+// Purpose: Find successful AI-related sign-ins that did not require or record MFA.
+// Data Source(s): SigninLogs
+// Tuning: Best paired with privileged-user filters or sensitive-app inventories.
+
+
+let Lookback = 7d;
+let AIApps = dynamic(["openai", "chatgpt", "claude", "anthropic", "gemini", "copilot", "copilot studio", "azure ai", "azure openai", "cognitive services", "ai foundry", "perplexity", "mistral"]);
+SigninLogs
+| where TimeGenerated > ago(Lookback)
+| extend AppComposite = tolower(strcat(coalesce(AppDisplayName, ""), " ", coalesce(ResourceDisplayName, ""))),
+         User = tostring(UserPrincipalName),
+         AuthReq = tolower(tostring(AuthenticationRequirement)),
+         Methods = tolower(tostring(AuthenticationMethodsUsed))
+| where AppComposite has_any (AIApps)
+| where ResultType == 0
+| where AuthReq !has "multi" and Methods !has "mfa" and Methods !has "fido" and Methods !has "authenticator"
+| project TimeGenerated, User, AppDisplayName, ResourceDisplayName, IPAddress, UserAgent, AuthenticationRequirement, AuthenticationMethodsUsed, ConditionalAccessStatus, ResultType
+| sort by TimeGenerated desc

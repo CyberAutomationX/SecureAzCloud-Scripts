@@ -1,0 +1,25 @@
+// Name: Cloud AI Bulk Upload Activity
+// Purpose: Detect short-window bursts of file upload activity to AI cloud applications.
+// Data Source(s): CloudAppEvents
+// Tuning: Raise or lower the UploadCount threshold according to the event granularity of each connected cloud app.
+
+
+let Lookback = 7d;
+let BurstWindow = 30m;
+let AIApps = dynamic(["chatgpt", "openai", "claude", "anthropic", "gemini", "copilot", "copilot studio", "azure ai", "azure openai", "perplexity", "mistral", "hugging face"]);
+let UploadTerms = dynamic(["upload", "fileuploaded", "upload file", "create file", "put file"]);
+CloudAppEvents
+| where Timestamp > ago(Lookback)
+| extend App = tolower(Application),
+         User = coalesce(AccountId, AccountDisplayName),
+         Action = tolower(ActionType),
+         Activity = tolower(ActivityType)
+| where App has_any (AIApps)
+| where Action has_any (UploadTerms) or Activity has_any (UploadTerms)
+| summarize UploadCount = count(),
+            Objects = make_set(ObjectName, 50),
+            ObjectTypes = make_set(ObjectType, 10),
+            IPs = make_set(IPAddress, 20)
+    by User, Application, bin(Timestamp, BurstWindow)
+| where UploadCount >= 10
+| sort by UploadCount desc

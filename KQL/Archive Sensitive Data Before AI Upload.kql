@@ -1,0 +1,30 @@
+// Name: Archive Sensitive Data Before AI Upload
+// Purpose: Correlate archive creation activity with near-term AI traffic to catch staged data uploads to public AI services.
+// Data Source(s): DeviceProcessEvents, DeviceNetworkEvents
+// Tuning: Exclude backup servers and approved packaging workflows that legitimately compress data before approved transfers.
+
+
+let Lookback = 7d;
+let AIDomains = dynamic(["openai.com", "chatgpt.com", "api.openai.com", "anthropic.com", "api.anthropic.com", "claude.ai", "gemini.google.com", "generativelanguage.googleapis.com", "makersuite.google.com", "cohere.ai", "api.cohere.ai", "mistral.ai", "api.mistral.ai", "perplexity.ai", "api.perplexity.ai", "huggingface.co", "api-inference.huggingface.co", "replicate.com", "api.replicate.com", "together.ai", "together.xyz", "fireworks.ai", "stability.ai", "grok.com", "x.ai"]);
+let ArchiveCommands =
+DeviceProcessEvents
+| where Timestamp > ago(Lookback)
+| extend Cmd_l = tolower(ProcessCommandLine),
+         Proc = tolower(FileName),
+         Actor = iff(isempty(AccountUpn), strcat(AccountDomain, "\\", AccountName), AccountUpn)
+| where Proc in ("7z.exe","7za.exe","rar.exe","winrar.exe","tar.exe","powershell.exe","pwsh.exe","zip.exe")
+       or Cmd_l has_any ("compress-archive","7z a ","tar -c","tar -cz","winrar a ","rar a ")
+| project ArchiveTime = Timestamp, DeviceId, DeviceName, Actor, FileName, ProcessCommandLine;
+let AITraffic =
+DeviceNetworkEvents
+| where Timestamp > ago(Lookback)
+| extend RemoteUrl_l = tolower(RemoteUrl),
+         Actor = iff(isempty(InitiatingProcessAccountUpn), strcat(InitiatingProcessAccountDomain, "\\", InitiatingProcessAccountName), InitiatingProcessAccountUpn)
+| where isnotempty(RemoteUrl_l) and RemoteUrl_l has_any (AIDomains)
+| project NetworkTime = Timestamp, DeviceId, DeviceName, Actor, RemoteUrl, InitiatingProcessFileName, InitiatingProcessCommandLine;
+ArchiveCommands
+| join kind=innerunique AITraffic on DeviceId, DeviceName, Actor
+| where NetworkTime between (ArchiveTime .. ArchiveTime + 30m)
+| summarize AIConnections = count(), RemoteUrls = make_set(RemoteUrl, 20), ArchiveCommands = make_set(ProcessCommandLine, 5)
+    by DeviceName, Actor, ArchiveTime
+| sort by ArchiveTime desc
